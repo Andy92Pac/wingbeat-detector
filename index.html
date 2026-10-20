@@ -1,0 +1,1660 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1020"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<title>Wingbeat Detector</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,750&display=swap">
+<style>
+/* Layout: one phone-width column. Verdict and controls first, then the dark instrument screen,
+   the pass log, a pitch ruler against two reference species, and the recording notes. */
+:root {
+  --bg: #eef0f5;
+  --surface: #f8f9fc;
+  --ink: #171a2b;
+  --muted: #586074;
+  --line: #d4d8e3;
+  --accent: #985700;
+  --accent-fill: #eaa43c;
+  --accent-on: #1d1304;
+  --calm: #2b7356;
+  --screen: #10142a;
+  --screen-grid: #262c4b;
+  --screen-ink: #b6bbd5;
+  --signal: #ffc35a;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1020; --surface: #151a2f; --ink: #e6e8f2; --muted: #9ca2bd; --line: #272d47;
+    --accent: #f3b13f; --accent-fill: #f3b13f; --accent-on: #1d1304; --calm: #7fd1a8;
+    --screen: #0a0d1d; --screen-grid: #212743; --screen-ink: #a9afcb; --signal: #ffc35a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1020; --surface: #151a2f; --ink: #e6e8f2; --muted: #9ca2bd; --line: #272d47;
+  --accent: #f3b13f; --accent-fill: #f3b13f; --accent-on: #1d1304; --calm: #7fd1a8;
+  --screen: #0a0d1d; --screen-grid: #212743; --screen-ink: #a9afcb; --signal: #ffc35a;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 30px;
+}
+.wrap > * { min-width: 0; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 750;
+  font-size: clamp(36px, 9vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+.lead { margin: 0; color: var(--muted); font-size: 17px; max-width: 58ch; }
+.hz { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 0;
+  text-wrap: balance;
+}
+h3 { font-size: 15px; margin: 0 0 8px; letter-spacing: 0.01em; }
+
+/* Verdict */
+.verdict {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+.source {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  min-width: 0;
+}
+.source b { font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.vtitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(26px, 6.4vw, 34px);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.dot {
+  flex: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.verdict[data-state="found"] .dot { background: var(--accent-fill); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-fill) 28%, transparent); }
+.verdict[data-state="weak"] .dot { background: transparent; border: 3px solid var(--accent-fill); }
+.verdict[data-state="none"] .dot { background: var(--calm); }
+.verdict[data-state="error"] .dot { background: transparent; border: 3px solid var(--muted); }
+.vsub { margin: 0; color: var(--muted); max-width: 60ch; }
+.vsub strong { color: var(--ink); font-weight: 600; }
+.progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.progress > i { display: block; height: 100%; width: 0; background: var(--accent-fill); transition: width 0.15s linear; }
+
+/* Controls */
+.controls { display: grid; gap: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 15px/1 var(--font-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-on); }
+.btn.primary:hover { filter: brightness(1.05); }
+.btn.ghost { background: transparent; }
+.btn:focus-visible, .filepick:focus-within, .seg label:focus-within, .pass-play:focus-visible, .more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn[disabled] { opacity: 0.5; cursor: default; }
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.filepick { position: relative; }
+
+.seg { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.seg legend { float: left; font-size: 14px; color: var(--muted); padding: 0; margin-right: 4px; }
+.seg .opts { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; background: var(--surface); }
+.seg label { position: relative; padding: 7px 12px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--muted); }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--bg); }
+.note { margin: 0; font-size: 14px; color: var(--muted); max-width: 62ch; }
+
+/* Instrument screen */
+.screen-fig { margin: 0; display: grid; gap: 10px; }
+.screen {
+  position: relative;
+  background: var(--screen);
+  border-radius: 14px;
+  padding: 10px 10px 6px;
+  color: var(--screen-ink);
+  touch-action: manipulation;
+  cursor: crosshair;
+}
+.screen canvas { display: block; width: 100%; }
+#spec { height: 250px; }
+#score { height: 78px; }
+.playhead {
+  position: absolute;
+  top: 10px; bottom: 26px;
+  width: 1.5px;
+  left: 0;
+  background: #ffffff;
+  opacity: 0.9;
+  pointer-events: none;
+  will-change: transform;
+}
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; background: var(--accent-fill); }
+
+/* Pass log */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.count { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.passes { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.pass {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pass > div { min-width: 0; }
+.num {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pass-main { font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.pass-meta { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.pass-ref { font-size: 13.5px; color: var(--accent); margin-top: 2px; }
+.level {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.level.strong { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-on); }
+.level.likely { border-color: var(--accent); color: var(--accent); }
+.pass-play {
+  appearance: none;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  display: grid; place-items: center;
+  cursor: pointer;
+}
+.pass-play svg { width: 16px; height: 16px; }
+.pass-play[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.empty { color: var(--muted); padding: 16px 0; border-bottom: 1px solid var(--line); margin: 0; }
+.more {
+  appearance: none; background: none; border: 0; padding: 12px 0 0;
+  color: var(--accent); font: 600 15px var(--font-body); cursor: pointer;
+}
+
+/* Pitch ruler */
+.ruler-wrap { display: grid; gap: 12px; }
+.ruler { position: relative; height: 62px; margin: 4px 6px 0; }
+.ruler .track { position: absolute; left: 0; right: 0; top: 20px; height: 2px; background: var(--line); }
+.ruler .band {
+  position: absolute; top: 10px; height: 22px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent);
+  min-width: 6px;
+}
+.band.b0, .legend .sw.b0 { background: color-mix(in srgb, var(--muted) 20%, transparent); }
+.band.b1, .legend .sw.b1 { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 2px, transparent 2px 5px); }
+.ruler .mark {
+  position: absolute; top: 13px; width: 14px; height: 14px; margin-left: -7px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  border: 2px solid var(--bg);
+  opacity: 0.9;
+}
+.ruler .tick { position: absolute; top: 42px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.ruler .tick::before { content: ""; position: absolute; left: 50%; top: -10px; width: 1px; height: 6px; background: var(--line); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend b { color: var(--ink); font-weight: 600; }
+.legend .sw { width: 18px; height: 12px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent); }
+.legend .sw.you { width: 12px; border-radius: 50%; border: 0; background: var(--accent-fill); }
+.ruler-note { margin: 0; font-size: 14px; color: var(--muted); max-width: 64ch; }
+
+/* Notes */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 15px; }
+.notes p { margin: 0; font-size: 15px; }
+.notes .block { display: grid; gap: 4px; align-content: start; }
+.foot { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+
+.dropping .screen { outline: 2px dashed var(--signal); outline-offset: 4px; }
+
+
+.note a { color: var(--accent); font-weight: 600; }
+.btn.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.filepick.is-disabled { opacity: 0.5; pointer-events: none; }
+.meter { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.meter .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter .bar i { display: block; height: 100%; width: 0; background: var(--calm); transition: width 0.1s linear; }
+.meter .hz { min-width: 4.5em; text-align: right; }
+.verdict[data-state="listening"] .dot { background: var(--calm); animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.3; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict[data-state="listening"] .dot { animation: none; }
+  .meter .bar i { transition: none; }
+  .progress > i { transition: none; }
+}
+</style>
+
+<div class="wrap" id="app">
+  <header>
+    <p class="eyebrow">Mosquito wingbeat check</p>
+    <h1>Wingbeat Detector</h1>
+        <p class="lead">Listen through your phone's microphone, or load a recording. It looks for the steady <span class="hz">280–950 Hz</span> whine of mosquito wings, with the harmonics that set it apart from other sounds.</p>
+  </header>
+
+  <section class="verdict" id="verdict" data-state="busy" aria-live="polite">
+    <div class="source" id="source"><span class="tag">Synthetic sample</span><b>Night-time bedroom</b><span>20.0 s</span></div>
+    <p class="vtitle"><span class="dot" aria-hidden="true"></span><span id="vtitle">Analyzing the sample…</span></p>
+    <p class="vsub" id="vsub">Two fly-bys, a voice and a couple of knocks, generated in your browser.</p>
+    <div class="progress" id="progress" aria-hidden="true"><i></i></div>
+    <div class="meter" id="meter" hidden><span>Mic level</span><div class="bar"><i></i></div><span class="hz" id="meterDb">−∞ dB</span></div>
+  </section>
+
+  <section class="controls" aria-label="Controls">
+    <div class="actions">
+      <button class="btn primary" id="live" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="liveIcon" d="M8 1.8a2.3 2.3 0 0 0-2.3 2.3v3.6a2.3 2.3 0 0 0 4.6 0V4.1A2.3 2.3 0 0 0 8 1.8zM3.6 7.4a4.4 4.4 0 0 0 8.8 0M8 11.8v2.4"/></svg>
+        <span id="liveLabel">Listen live</span>
+      </button>
+      <label class="btn filepick" for="file">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 11v2.5h11V11"/></svg>
+        Load recording
+        <input class="vh" type="file" id="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.caf,.mov,.mp4">
+      </label>
+      <button class="btn" id="play" type="button" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+        <span id="playLabel">Play</span>
+      </button>
+      <button class="btn ghost" id="sample" type="button">Use the sample</button>
+    </div>
+    <fieldset class="seg">
+      <legend>Sensitivity</legend>
+      <span class="opts">
+        <label><input type="radio" name="sens" id="sens-strict" value="strict">Strict</label>
+        <label><input type="radio" name="sens" id="sens-normal" value="normal" checked>Normal</label>
+        <label><input type="radio" name="sens" id="sens-sensitive" value="sensitive">Sensitive</label>
+      </span>
+    </fieldset>
+        <p class="note">Tap Listen live and set the phone down near where you hear the buzz, microphone end towards it. The page keeps the screen awake while it listens; locking the phone stops it. Audio stays on this device and is never uploaded.</p>
+  </section>
+
+  <figure class="screen-fig">
+    <div class="screen" id="screen" role="img" aria-label="Spectrogram of the recording with detected passes marked">
+      <canvas id="spec"></canvas>
+      <canvas id="score"></canvas>
+      <div class="playhead" id="playhead" hidden></div>
+    </div>
+    <figcaption>Frequency runs up, time runs right. The amber bar on the left marks the wingbeat band; brackets on top mark detected passes. The strip below scores how much each moment looks like a wingbeat, with the dashed line as the cut-off. Tap anywhere to listen from that point.</figcaption>
+  </figure>
+
+  <section aria-labelledby="passes-h">
+    <div class="section-head">
+      <h2 id="passes-h">Detected passes</h2>
+      <span class="count" id="passCount"></span>
+    </div>
+    <ol class="passes" id="passes"></ol>
+    <button class="more" id="more" type="button" hidden></button>
+  </section>
+
+  <section class="ruler-wrap" aria-labelledby="ruler-h">
+    <h2 id="ruler-h">Where the pitch sits</h2>
+    <div class="ruler" id="ruler" aria-hidden="true"></div>
+    <div class="legend">
+      <span><i class="sw b0"></i><b>House mosquito</b> 380–560 Hz</span>
+      <span><i class="sw b1"></i><b>Tiger mosquito ♀</b> 590–615 Hz</span>
+      <span><i class="sw you"></i>Your passes</span>
+    </div>
+    <p class="ruler-note">Reference bands come from real phone recordings in Stanford's Abuzz dataset, measured with this detector: common house mosquitoes (<i>Culex pipiens</i>) at <span class="hz">380–560 Hz</span> and tiger mosquito females (<i>Aedes albopictus</i>) at <span class="hz">590–615 Hz</span>. Wingbeat pitch rises with temperature and varies between individuals, so treat a match as a hint, not an ID.</p>
+  </section>
+
+  <section class="notes" aria-label="Notes">
+    <div class="block">
+      <h3>Recording tips</h3>
+      <ul>
+        <li>Hold the microphone 10–20 cm from where you hear the buzz. Past about 30 cm it sinks into room noise.</li>
+        <li>Turn off fans, AC and music, and stay quiet while recording.</li>
+        <li>Record 20 to 60 seconds, including a few seconds without the buzz.</li>
+        <li>If your recorder has noise reduction or an “enhance” option, switch it off.</li>
+      </ul>
+    </div>
+    <div class="block">
+      <h3>How it decides</h3>
+      <p>Each 32 ms slice is compared with the recording's own quiet background, so fans and electrical hum drop out. In what's left, it looks for a tone between 280 and 950 Hz whose harmonics stand well clear of the gaps between them, and only counts it if the pitch holds for about a third of a second.</p>
+    </div>
+    <div class="block">
+      <h3>What fools it</h3>
+      <p>Music, singing and high-pitched voices can look the same. A buzz that never stops for the whole recording can blend into the background. Tested on 14 Abuzz phone recordings of mosquitoes (all detected) and one background-only recording (nothing found).</p>
+    </div>
+  </section>
+
+  <p class="foot">Runs entirely in your browser. Recordings longer than 5 minutes are trimmed to the first 5.</p>
+</div>
+
+<script>window.WINGBEAT_LIVE = true;</script>
+<script>
+/* Wingbeat DSP: shared by the page and the Node tests. */
+(function (root) {
+  'use strict';
+
+  var CFG = {
+    fsTarget: 8000,   // analysis sample rate after decimation
+    N: 1024,          // FFT size (~128 ms at 8 kHz, ~7.8 Hz bins)
+    hop: 256,         // ~32 ms
+    fMin: 280,        // wingbeat search band
+    fMax: 950,
+    fStep: 3,
+    fTop: 3500,       // highest harmonic considered
+    dispTop: 3000,    // spectrogram display ceiling
+    bgPct: 0.08,      // per-bin background percentile
+    bgBlockSec: 30,
+    maxSec: 300
+  };
+
+  var SENS = {
+    strict:    { sal: 26, minDur: 0.45, minFrames: 10, strong: 38 },
+    normal:    { sal: 20, minDur: 0.30, minFrames: 7,  strong: 34 },
+    sensitive: { sal: 15, minDur: 0.22, minFrames: 5,  strong: 30 }
+  };
+
+  function makeFFT(n) {
+    var levels = Math.round(Math.log2(n));
+    var rev = new Uint32Array(n);
+    for (var i = 0; i < n; i++) {
+      var x = i, r = 0;
+      for (var j = 0; j < levels; j++) { r = (r << 1) | (x & 1); x >>= 1; }
+      rev[i] = r;
+    }
+    var cs = new Float64Array(n / 2), sn = new Float64Array(n / 2);
+    for (i = 0; i < n / 2; i++) { cs[i] = Math.cos(2 * Math.PI * i / n); sn[i] = Math.sin(2 * Math.PI * i / n); }
+    return function (re, im) {
+      for (var i = 0; i < n; i++) {
+        var j = rev[i];
+        if (j > i) { var t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+      }
+      for (var size = 2; size <= n; size <<= 1) {
+        var half = size >> 1, step = n / size;
+        for (var s = 0; s < n; s += size) {
+          for (var a = s, k = 0; a < s + half; a++, k += step) {
+            var b = a + half;
+            var tr = re[b] * cs[k] + im[b] * sn[k];
+            var ti = im[b] * cs[k] - re[b] * sn[k];
+            re[b] = re[a] - tr; im[b] = im[a] - ti;
+            re[a] += tr; im[a] += ti;
+          }
+        }
+      }
+    };
+  }
+
+  function lowpassTaps(D) {
+    var fc = 0.45 / D;
+    var L = 32 * D + 1, M = (L - 1) / 2;
+    var h = new Float32Array(L), sum = 0, i;
+    for (i = 0; i < L; i++) {
+      var n = i - M;
+      var sinc = n === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * n) / (Math.PI * n);
+      var w = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (L - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (L - 1));
+      h[i] = sinc * w; sum += h[i];
+    }
+    for (i = 0; i < L; i++) h[i] /= sum;
+    return h;
+  }
+
+  // Windowed-sinc low-pass + decimation to ~fsTarget. Generator yields progress 0..1.
+  function* decimateGen(x, sr, out) {
+    var D = Math.max(1, Math.round(sr / CFG.fsTarget));
+    var fsOut = sr / D;
+    if (D === 1) { out.y = Float32Array.from(x); out.fs = sr; return; }
+    var h = lowpassTaps(D), L = h.length, M = (L - 1) / 2, i;
+    var len = x.length, nOut = Math.floor(len / D);
+    var y = new Float32Array(nOut);
+    for (var o = 0; o < nOut; o++) {
+      var start = o * D - M, acc = 0;
+      if (start >= 0 && start + L <= len) {
+        for (i = 0; i < L; i++) acc += h[i] * x[start + i];
+      } else {
+        for (i = 0; i < L; i++) { var idx = start + i; if (idx >= 0 && idx < len) acc += h[i] * x[idx]; }
+      }
+      y[o] = acc;
+      if ((o & 32767) === 32767) yield o / nOut;
+    }
+    out.y = y; out.fs = fsOut;
+  }
+
+  // Same filter, fed in chunks (live microphone). push() returns the new output samples.
+  function makeDecimator(sr) {
+    var D = Math.max(1, Math.round(sr / CFG.fsTarget));
+    var h = lowpassTaps(D), L = h.length, M = (L - 1) / 2;
+    var hist = new Float32Array(0), absStart = 0, next = 0;
+    return {
+      fs: sr / D,
+      push: function (chunk) {
+        if (D === 1) return Float32Array.from(chunk);
+        var cat = new Float32Array(hist.length + chunk.length);
+        cat.set(hist); cat.set(chunk, hist.length);
+        var absEnd = absStart + cat.length, outs = [];
+        while (next + M < absEnd) {
+          var start = next - M - absStart, acc = 0, i;
+          if (start >= 0) { for (i = 0; i < L; i++) acc += h[i] * cat[start + i]; }
+          else { for (i = 0; i < L; i++) { var idx = start + i; if (idx >= 0) acc += h[i] * cat[idx]; } }
+          outs.push(acc);
+          next += D;
+        }
+        var keep = Math.max(0, next - M - absStart);
+        hist = cat.slice(keep); absStart += keep;
+        return Float32Array.from(outs);
+      }
+    };
+  }
+
+  function percentileSorted(arr, p) {
+    var idx = Math.min(arr.length - 1, Math.max(0, Math.floor(p * (arr.length - 1))));
+    return arr[idx];
+  }
+
+  // Full analysis. Yields progress 0..1. Result is written into `A`.
+  function* analyzeGen(x, sr, A) {
+    var dec = {};
+    var g = decimateGen(x, sr, dec), st;
+    while (!(st = g.next()).done) yield 0.35 * st.value;
+    var y = dec.y, fs = dec.fs, N = CFG.N, hop = CFG.hop;
+    var df = fs / N;
+    var nFrames = y.length >= N ? Math.floor((y.length - N) / hop) + 1 : 0;
+    var nBins = Math.min(N / 2, Math.floor(CFG.fTop * 1.03 / df) + 3);
+    var dispBins = Math.min(nBins, Math.floor(CFG.dispTop / df) + 1);
+
+    A.fs = fs; A.df = df; A.hop = hop; A.N = N; A.nFrames = nFrames;
+    A.nBins = nBins; A.dispBins = dispBins; A.dur = y.length / fs;
+    A.frameSec = hop / fs;
+    if (nFrames < 8) { A.tooShort = true; return; }
+
+    var fft = makeFFT(N);
+    var win = new Float32Array(N), t, k, i;
+    for (i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+    var re = new Float64Array(N), im = new Float64Array(N);
+    var pow = new Float32Array(nFrames * nBins);
+    var disp = new Int16Array(nFrames * dispBins); // dB * 20
+    var EPS = 1e-14;
+    for (t = 0; t < nFrames; t++) {
+      var off = t * hop;
+      for (i = 0; i < N; i++) { re[i] = y[off + i] * win[i]; im[i] = 0; }
+      fft(re, im);
+      var base = t * nBins, dbase = t * dispBins;
+      for (k = 0; k < nBins; k++) {
+        var p = re[k] * re[k] + im[k] * im[k];
+        pow[base + k] = p;
+        if (k < dispBins) disp[dbase + k] = Math.round(200 * Math.log10(p + EPS));
+      }
+      if ((t & 255) === 255) yield 0.35 + 0.35 * t / nFrames;
+    }
+
+    // 3-frame smoothed dB for analysis
+    var Ps = new Float32Array(nFrames * nBins);
+    for (t = 0; t < nFrames; t++) {
+      var t0 = Math.max(0, t - 1), t1 = Math.min(nFrames - 1, t + 1), cnt = t1 - t0 + 1;
+      for (k = 0; k < nBins; k++) {
+        var s = 0;
+        for (var u = t0; u <= t1; u++) s += pow[u * nBins + k];
+        Ps[t * nBins + k] = 10 * Math.log10(s / cnt + EPS);
+      }
+    }
+    pow = null;
+    yield 0.75;
+
+    // Background: low percentile per bin per ~30 s block, interpolated between block centres
+    var Bf = Math.max(1, Math.round(CFG.bgBlockSec * fs / hop));
+    var nBlocks = Math.max(1, Math.round(nFrames / Bf));
+    var bounds = [];
+    for (var b = 0; b < nBlocks; b++) bounds.push([Math.floor(b * nFrames / nBlocks), Math.floor((b + 1) * nFrames / nBlocks)]);
+    var bg = new Float32Array(nBlocks * nBins), centers = new Float32Array(nBlocks);
+    for (b = 0; b < nBlocks; b++) {
+      var f0i = bounds[b][0], f1i = bounds[b][1], m = f1i - f0i;
+      centers[b] = (f0i + f1i - 1) / 2;
+      var tmp = new Float32Array(m);
+      for (k = 0; k < nBins; k++) {
+        for (i = 0; i < m; i++) tmp[i] = Ps[(f0i + i) * nBins + k];
+        tmp.sort();
+        bg[b * nBins + k] = percentileSorted(tmp, CFG.bgPct);
+      }
+    }
+    A.bgMean = 0;
+    for (k = 0; k < nBins; k++) A.bgMean += bg[k];
+    A.bgMean /= nBins;
+    yield 0.8;
+
+    // Harmonic comb per frame
+    // Each candidate: harmonic bins, plus the middle half of every gap between harmonics.
+    // A wingbeat is a clean comb: strong peaks, quiet gaps. Voices put extra harmonics in the gaps.
+    var cands = [];
+    for (var f = CFG.fMin; f <= CFG.fMax; f += CFG.fStep) {
+      var H = Math.max(2, Math.min(4, Math.floor(CFG.fTop / f)));
+      var hb = [], ga = [], gb = [];
+      for (var h = 1; h <= H; h++) hb.push(Math.round(h * f / df));
+      for (h = 0; h <= H; h++) {
+        var a0 = Math.ceil((h + 0.25) * f / df), b0 = Math.floor((h + 0.75) * f / df);
+        b0 = Math.min(b0, nBins - 1); a0 = Math.min(a0, b0);
+        ga.push(a0); gb.push(b0);
+      }
+      cands.push({ f: f, H: H, hb: hb, ga: ga, gb: gb });
+    }
+    var LOG = new Uint8Array(nBins + 1);
+    for (i = 2; i <= nBins; i++) LOG[i] = LOG[i >> 1] + 1;
+    var levels = LOG[nBins] + 1;
+    var sparse = [];
+    for (var lv = 0; lv < levels; lv++) sparse.push(new Float32Array(nBins));
+    function rmax(a, b) {
+      var j = LOG[b - a + 1];
+      var x1 = sparse[j][a], x2 = sparse[j][b - (1 << j) + 1];
+      return x1 > x2 ? x1 : x2;
+    }
+    var S = sparse[0], Sm = new Float32Array(nBins), G = new Float32Array(6);
+    A.f0 = new Float32Array(nFrames);
+    A.sal = new Float32Array(nFrames);
+    A.nh = new Uint8Array(nFrames);
+    A.c1 = new Float32Array(nFrames);
+    for (t = 0; t < nFrames; t++) {
+      // locate blocks for interpolation
+      var bA = 0, bB = 0, wB = 0;
+      if (nBlocks > 1) {
+        if (t <= centers[0]) { bA = bB = 0; }
+        else if (t >= centers[nBlocks - 1]) { bA = bB = nBlocks - 1; }
+        else {
+          for (b = 0; b < nBlocks - 1; b++) if (t >= centers[b] && t < centers[b + 1]) break;
+          bA = b; bB = b + 1; wB = (t - centers[b]) / (centers[b + 1] - centers[b]);
+        }
+      }
+      for (k = 0; k < nBins; k++) {
+        var bgv = (1 - wB) * bg[bA * nBins + k] + wB * bg[bB * nBins + k];
+        var v = Ps[t * nBins + k] - bgv;
+        S[k] = v > 0 ? v : 0;
+      }
+      for (k = 0; k < nBins; k++) {
+        var a1 = S[k], a0 = k > 0 ? S[k - 1] : 0, a2 = k + 1 < nBins ? S[k + 1] : 0;
+        Sm[k] = a1 > a0 ? (a1 > a2 ? a1 : a2) : (a0 > a2 ? a0 : a2);
+      }
+      for (lv = 1; lv < levels; lv++) {
+        var prev = sparse[lv - 1], curT = sparse[lv], w2 = 1 << (lv - 1);
+        for (k = 0; k + (1 << lv) <= nBins; k++) curT[k] = prev[k] > prev[k + w2] ? prev[k] : prev[k + w2];
+      }
+      var best = -1e9, bf = 0, bnh = 0, bc1 = 0;
+      for (var c = 0; c < cands.length; c++) {
+        var C = cands[c], sal = 0, nh = 0, c1 = 0;
+        for (h = 0; h <= C.H; h++) G[h] = rmax(C.ga[h], C.gb[h]);
+        for (h = 0; h < C.H; h++) {
+          var hv = C.hb[h] < nBins ? Sm[C.hb[h]] : 0;
+          var con = hv - 0.5 * (G[h] + G[h + 1]);
+          if (h === 0) c1 = con;
+          if (h < 2) sal += con; else if (con > 0) sal += 0.5 * con;
+          if (con >= 6) nh++;
+        }
+        if (sal > best) { best = sal; bf = C.f; bnh = nh; bc1 = c1; }
+      }
+      // refine f0 with parabolic interpolation on the fundamental bin
+      var kb = Math.round(bf / df);
+      if (kb > 1 && kb < nBins - 1) {
+        var pa = Ps[t * nBins + kb - 1], pb = Ps[t * nBins + kb], pc = Ps[t * nBins + kb + 1];
+        if (pb >= pa && pb >= pc) {
+          var den = pa - 2 * pb + pc;
+          var delta = den !== 0 ? 0.5 * (pa - pc) / den : 0;
+          if (Math.abs(delta) <= 0.6) bf = (kb + delta) * df;
+        }
+      }
+      A.f0[t] = bf; A.sal[t] = best; A.nh[t] = bnh; A.c1[t] = bc1;
+      if ((t & 255) === 255) yield 0.8 + 0.2 * t / nFrames;
+    }
+
+    // display levels
+    var sample = [];
+    for (i = 0; i < disp.length; i += 7) sample.push(disp[i]);
+    sample.sort(function (a, b) { return a - b; });
+    var dHi = sample[Math.floor(sample.length * 0.998)] / 20;
+    var dLo = sample[Math.floor(sample.length * 0.30)] / 20 - 4;
+    if (dHi - dLo < 40) dHi = dLo + 40;
+    A.disp = disp; A.dispLo = dLo; A.dispHi = dHi;
+    yield 1;
+  }
+
+  function median(arr) {
+    if (!arr.length) return 0;
+    var s = Array.prototype.slice.call(arr).sort(function (a, b) { return a - b; });
+    var m = s.length >> 1;
+    return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]);
+  }
+
+  function detectEvents(A, sensKey) {
+    var T = SENS[sensKey] || SENS.normal;
+    var maxGap = 3, tol = 0.10;
+    var events = [], cur = null, t;
+    var cand = new Uint8Array(A.nFrames || 0);
+    function close() {
+      if (!cur) return;
+      var span = (cur.last - cur.first + 1) * A.frameSec;
+      if (cur.frames.length >= T.minFrames && span >= T.minDur) events.push(cur);
+      cur = null;
+    }
+    for (t = 0; t < A.nFrames; t++) {
+      if (cur && t - cur.last > maxGap + 1) close();
+      if (A.sal[t] >= T.sal && A.nh[t] >= 2) {
+        cand[t] = 1;
+        var f = A.f0[t];
+        if (cur) {
+          var ref = median(cur.recent);
+          if (Math.abs(f - ref) / ref <= tol) {
+            cur.frames.push(t); cur.last = t;
+            cur.recent.push(f); if (cur.recent.length > 9) cur.recent.shift();
+          }
+          // otherwise ignore this frame for now; the current pass ends via the gap rule
+        } else {
+          cur = { first: t, last: t, frames: [t], recent: [f] };
+        }
+      }
+    }
+    close();
+    var half = A.N / 2 / A.fs;
+    var out = events.map(function (e, i) {
+      var f0s = e.frames.map(function (t) { return A.f0[t]; });
+      var sals = e.frames.map(function (t) { return A.sal[t]; });
+      var c1s = e.frames.map(function (t) { return A.c1[t]; });
+      var nhs = e.frames.map(function (t) { return A.nh[t]; });
+      var fMed = median(f0s);
+      var mean = f0s.reduce(function (a, b) { return a + b; }, 0) / f0s.length;
+      var sd = Math.sqrt(f0s.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / f0s.length);
+      var strength = median(sals);
+      var pk = 0; for (var j = 1; j < sals.length; j++) if (sals[j] > sals[pk]) pk = j;
+      var start = e.first * A.frameSec + half - A.frameSec;
+      var end = e.last * A.frameSec + half + A.frameSec;
+      var dur = end - start;
+      var level = strength >= T.strong && dur >= 0.5 ? 'strong' : (strength >= T.sal + 6 ? 'likely' : 'weak');
+      return {
+        n: i + 1, start: Math.max(0, start), end: Math.min(A.dur, end), dur: dur,
+        f0: fMed, cv: sd / mean, strength: strength, aboveBg: median(c1s),
+        harmonics: Math.round(median(nhs)), peakT: e.frames[pk] * A.frameSec + half,
+        frames: e.frames, level: level
+      };
+    });
+    return { events: out, cand: cand, T: T };
+  }
+
+  function runSync(gen) { var s; while (!(s = gen.next()).done) {} }
+
+  // ---------- synthetic audio (deterministic) ----------
+  function rng(seed) {
+    return function () {
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(r) { var u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+  function addPink(x, sr, rms, r) {
+    var b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, i, acc = 0;
+    var tmp = new Float32Array(x.length);
+    for (i = 0; i < x.length; i++) {
+      var w = gauss(r);
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+      b2 = 0.96900 * b2 + w * 0.1538520; b3 = 0.86650 * b3 + w * 0.3104856;
+      b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+      var p = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362; b6 = w * 0.115926;
+      tmp[i] = p; acc += p * p;
+    }
+    var g = rms / Math.sqrt(acc / x.length);
+    for (i = 0; i < x.length; i++) x[i] += tmp[i] * g;
+  }
+
+  function addHum(x, sr, base, amps) {
+    for (var i = 0; i < x.length; i++) {
+      var t = i / sr, v = 0;
+      for (var h = 0; h < amps.length; h++) v += amps[h] * Math.sin(2 * Math.PI * base * (h + 1) * t + h);
+      x[i] += v;
+    }
+  }
+
+  // A mosquito pass: harmonic wingbeat with slow pitch wobble, flight tremolo, fly-by envelope
+  function addMosquito(x, sr, o, r) {
+    var amps = [1, 0.62, 0.38, 0.24, 0.14, 0.08, 0.05];
+    var ph = amps.map(function () { return r() * 6.283; });
+    var i0 = Math.floor(o.t0 * sr), i1 = Math.min(x.length, Math.floor(o.t1 * sr));
+    var phase = 0, walk = 0, nyq = sr / 2;
+    var tremF = 4 + r() * 5, tremP = r() * 6.283;
+    for (var i = i0; i < i1; i++) {
+      var t = i / sr, tl = t - o.t0, span = o.t1 - o.t0;
+      if ((i & 63) === 0) walk = 0.995 * walk + 0.0008 * gauss(r);
+      var f = o.f0 * (1 + (o.wobble || 0.012) * Math.sin(2 * Math.PI * 0.6 * t + 1.3) + 0.005 * Math.sin(2 * Math.PI * 2.7 * t) + walk);
+      phase += f / sr;
+      var env = Math.exp(-0.5 * Math.pow((t - o.peak) / o.sigma, 2));
+      var fade = Math.min(1, tl / 0.05, (span - tl) / 0.05);
+      var trem = 1 + 0.25 * Math.sin(2 * Math.PI * tremF * t + tremP);
+      var v = 0;
+      for (var h = 0; h < amps.length; h++) {
+        if ((h + 1) * f >= nyq * 0.95) break;
+        v += amps[h] * Math.sin(2 * Math.PI * (h + 1) * phase + ph[h]);
+      }
+      x[i] += o.amp * env * fade * trem * v * 0.45;
+    }
+  }
+
+  // Voiced speech stand-in: harmonic source shaped by formants, syllable envelopes, moving pitch
+  function addSpeech(x, sr, o, r) {
+    var t = o.t0;
+    var vowels = [[730, 1090, 2440], [270, 2290, 3010], [530, 1840, 2480], [570, 840, 2410], [300, 870, 2240], [660, 1720, 2410]];
+    while (t < o.t1 - 0.12) {
+      var dur = 0.12 + r() * 0.22;
+      var v = vowels[Math.floor(r() * vowels.length)];
+      var f0a = o.f0 * (0.85 + 0.3 * r()), f0b = f0a * (0.8 + 0.4 * r());
+      var i0 = Math.floor(t * sr), i1 = Math.min(x.length, Math.floor((t + dur) * sr));
+      var phase = 0;
+      for (var i = i0; i < i1; i++) {
+        var u = (i - i0) / (i1 - i0);
+        var f0 = f0a + (f0b - f0a) * u + f0a * 0.03 * Math.sin(2 * Math.PI * 5 * u);
+        phase += f0 / sr;
+        var env = Math.sin(Math.PI * u);
+        var s = 0;
+        for (var h = 1; h * f0 < Math.min(4000, sr / 2 * 0.95); h++) {
+          var fh = h * f0, a = 0;
+          for (var q = 0; q < 3; q++) a += Math.exp(-0.5 * Math.pow((fh - v[q]) / (60 + 40 * q), 2)) * (q === 0 ? 1 : 0.6 / q);
+          a = (a + 0.02) / h;
+          s += a * Math.sin(2 * Math.PI * h * phase);
+        }
+        x[i] += o.amp * env * s;
+      }
+      t += dur + 0.03 + r() * 0.12;
+    }
+  }
+
+  function addKnocks(x, sr, times, amp, r) {
+    times.forEach(function (tk) {
+      var i0 = Math.floor(tk * sr), n = Math.floor(0.08 * sr);
+      for (var i = 0; i < n && i0 + i < x.length; i++) x[i0 + i] += amp * gauss(r) * Math.exp(-i / (0.012 * sr));
+    });
+  }
+
+  // The page's built-in example: a 20 s night-time room with two fly-bys, a voice and knocks
+  function synthSample(sr) {
+    var r = rng(20261020);
+    var dur = 20, x = new Float32Array(dur * sr);
+    addPink(x, sr, 0.006, r);
+    addHum(x, sr, 50, [0, 0.0016, 0.0006, 0.0011, 0, 0.0005, 0, 0.0004]);
+    addMosquito(x, sr, { t0: 2.2, t1: 7.6, peak: 4.9, sigma: 1.15, f0: 468, amp: 0.09 }, r);
+    addSpeech(x, sr, { t0: 9.0, t1: 11.4, f0: 135, amp: 0.05 }, r);
+    addKnocks(x, sr, [12.4, 12.65], 0.12, r);
+    addMosquito(x, sr, { t0: 13.4, t1: 18.4, peak: 15.6, sigma: 0.95, f0: 492, amp: 0.05 }, r);
+    var peak = 0, i;
+    for (i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]));
+    if (peak > 0.95) for (i = 0; i < x.length; i++) x[i] *= 0.95 / peak;
+    return x;
+  }
+
+  var api = {
+    CFG: CFG, SENS: SENS, analyzeGen: analyzeGen, makeDecimator: makeDecimator, detectEvents: detectEvents, runSync: runSync,
+    synthSample: synthSample, median: median,
+    _test: { rng: rng, addPink: addPink, addHum: addHum, addMosquito: addMosquito, addSpeech: addSpeech, addKnocks: addKnocks }
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.Wingbeat = api;
+})(this);
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var WB = window.Wingbeat, CFG = WB.CFG;
+  var $ = function (s) { return document.querySelector(s); };
+  var SAMPLE_SR = 24000;
+  var VISIBLE = 12;
+  var REF = [
+    { name: 'House mosquito', sci: 'Culex pipiens', lo: 380, hi: 560, key: 'house-mosquito' },
+    { name: 'Tiger mosquito ♀', sci: 'Aedes albopictus', lo: 590, hi: 615, key: 'tiger-mosquito' }
+  ];
+
+  var state = { src: null, A: null, D: null, sens: 'normal', showAll: false, job: 0 };
+  var audio = { ctx: null, node: null, t0: 0, from: 0, until: 0, raf: 0, passN: 0, buf: null, bufSrc: null };
+  var geo = null; // last drawn geometry for hit-testing and the playhead
+  var LIVE = !!window.WINGBEAT_LIVE;
+  var LIVE_WIN = 20, LIVE_STEP = 500, LIVE_MIN = 3, LIVE_KEEP = 600;
+  var live = { on: false, starting: false, log: [] };
+
+  try { var saved = localStorage.getItem('wingbeat-sens'); if (saved && WB.SENS[saved]) state.sens = saved; } catch (e) {}
+  var radio = document.getElementById('sens-' + state.sens);
+  if (radio) radio.checked = true;
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function fmtSec(s) { return s < 10 ? s.toFixed(1) : s.toFixed(s < 100 ? 1 : 0); }
+  function fmtDur(s) {
+    if (s < 60) return s.toFixed(1) + ' s';
+    var m = Math.floor(s / 60), r = Math.round(s - m * 60);
+    if (r === 60) { m++; r = 0; }
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  function mmss(s) { var m = Math.floor(s / 60), r = Math.round(s - m * 60); return m + ':' + (r < 10 ? '0' : '') + r; }
+  function refFor(f0) {
+    for (var i = 0; i < REF.length; i++) if (f0 >= REF[i].lo && f0 <= REF[i].hi) return REF[i];
+    return null;
+  }
+
+  // ---------- analysis ----------
+  function setBusy(p, label) {
+    var v = $('#verdict');
+    v.dataset.state = 'busy';
+    if (label) $('#vtitle').textContent = label;
+    $('#progress').hidden = false;
+    $('#progress > i').style.width = Math.round(p * 100) + '%';
+  }
+
+  function analyzeSource(src) {
+    stopPlay();
+    var job = ++state.job;
+    state.src = src; state.A = null; state.D = null; state.showAll = false;
+    audio.buf = null; audio.bufSrc = null;
+    renderSource();
+    $('#vsub').textContent = src.note || '';
+    setBusy(0, src.isSample ? 'Analyzing the sample…' : 'Analyzing…');
+    $('#play').disabled = true;
+    drawScreen();
+    renderPasses();
+    renderRuler();
+    var A = {}, gen = WB.analyzeGen(src.x, src.sr, A), last = performance.now();
+    return new Promise(function (resolve) {
+      function step() {
+        if (job !== state.job) return resolve(false);
+        var s;
+        while (!(s = gen.next()).done) {
+          if (performance.now() - last > 28) {
+            setBusy(s.value);
+            last = performance.now();
+            setTimeout(step, 0);
+            return;
+          }
+        }
+        state.A = A;
+        $('#progress').hidden = true;
+        $('#play').disabled = false;
+        redetect();
+        resolve(true);
+      }
+      setTimeout(step, 0);
+    });
+  }
+
+  function redetect() {
+    if (live.on) return;
+    if (!state.A) return;
+    state.D = state.A.tooShort ? { events: [], cand: new Uint8Array(0), T: WB.SENS[state.sens] } : WB.detectEvents(state.A, state.sens);
+    renderVerdict();
+    drawScreen();
+    renderPasses();
+    renderRuler();
+  }
+
+  // ---------- verdict ----------
+  function renderSource() {
+    var s = state.src, el = $('#source');
+    el.textContent = '';
+    var tag = document.createElement('span'); tag.className = 'tag';
+    tag.textContent = s.isSample ? 'Synthetic sample' : (s.session ? 'Live session' : 'Your recording');
+    var name = document.createElement('b'); name.textContent = s.name;
+    var dur = document.createElement('span'); dur.textContent = fmtDur(s.x.length / s.sr) + (s.trimmed ? (s.trimmedLast ? ' (last 5 min)' : ' (first 5 min)') : '');
+    el.append(tag, name, dur);
+  }
+
+  function renderVerdict() {
+    var v = $('#verdict'), t = $('#vtitle'), sub = $('#vsub');
+    var A = state.A, ev = state.D.events;
+    $('#progress').hidden = true;
+    if (A.tooShort) {
+      v.dataset.state = 'error';
+      t.textContent = 'Recording too short';
+      sub.textContent = 'Load at least a second of audio.';
+      return;
+    }
+    var real = ev.filter(function (e) { return e.level !== 'weak'; });
+    sub.textContent = '';
+    if (real.length) {
+      v.dataset.state = 'found';
+      t.textContent = 'Mosquito\u2011like buzz found';
+      var best = real.reduce(function (a, b) { return b.strength > a.strength ? b : a; });
+      var total = ev.reduce(function (a, e) { return a + e.dur; }, 0);
+      appendRich(sub, [
+        [ev.length + (ev.length === 1 ? ' pass' : ' passes'), true],
+        [', ' + fmtSec(total) + ' s in total. Clearest at ' + fmtSec(best.peakT) + ' s, pitch ', false],
+        [Math.round(best.f0 / 5) * 5 + ' Hz', true],
+        ['.', false]
+      ]);
+    } else if (ev.length) {
+      v.dataset.state = 'weak';
+      t.textContent = 'Possible faint buzz';
+      sub.textContent = (ev.length === 1 ? 'One weak pass' : ev.length + ' weak passes') + ' near the cut-off. Try recording closer, with the room quieter.';
+    } else {
+      v.dataset.state = 'none';
+      t.textContent = 'No mosquito\u2011like buzz';
+      sub.textContent = state.src.isSample
+        ? 'Nothing at this sensitivity.'
+        : 'Nothing steady between 280 and 950 Hz with clean harmonics. If you could hear one, hold the phone closer and try Sensitive.';
+    }
+  }
+  function appendRich(el, parts) {
+    parts.forEach(function (p) {
+      if (p[1]) { var s = document.createElement('strong'); s.textContent = p[0]; el.appendChild(s); }
+      else el.appendChild(document.createTextNode(p[0]));
+    });
+  }
+
+  // ---------- spectrogram + score ----------
+  var LUT = (function () {
+    var stops = [[0, [15, 19, 40]], [0.28, [42, 44, 108]], [0.52, [118, 58, 142]], [0.72, [206, 94, 80]], [0.88, [242, 164, 74]], [1, [255, 242, 200]]];
+    var lut = new Uint8ClampedArray(256 * 3);
+    for (var i = 0; i < 256; i++) {
+      var v = i / 255, s = 0;
+      while (s < stops.length - 2 && v > stops[s + 1][0]) s++;
+      var a = stops[s], b = stops[s + 1], u = (v - a[0]) / (b[0] - a[0]);
+      for (var c = 0; c < 3; c++) lut[i * 3 + c] = a[1][c] + (b[1][c] - a[1][c]) * u;
+    }
+    return lut;
+  })();
+
+  function sizeCanvas(cv) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var w = cv.clientWidth, h = cv.clientHeight;
+    var W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx: ctx, w: w, h: h, dpr: dpr };
+  }
+
+  function niceStep(dur, px) {
+    var steps = [0.5, 1, 2, 5, 10, 15, 30, 60];
+    for (var i = 0; i < steps.length; i++) if (px * steps[i] / dur >= 56) return steps[i];
+    return 60;
+  }
+
+  function drawScreen() {
+    var spec = $('#spec'), score = $('#score');
+    var S = sizeCanvas(spec), C = sizeCanvas(score);
+    var ink = css('--screen-ink') || '#b6bbd5', grid = css('--screen-grid') || '#262c4b', signal = css('--signal') || '#ffc35a', bg = css('--screen') || '#10142a';
+    var mono = '11px ' + (css('--font-mono') || 'monospace');
+    var L = 38, R = 6, T = 24, B = 2;
+    var pw = Math.max(10, S.w - L - R), ph = Math.max(10, S.h - T - B);
+    var A = state.A, D = state.D;
+    var dur = A && !A.tooShort ? A.dur : (state.src ? state.src.x.length / state.src.sr : 20);
+    geo = { L: L, pw: pw, dur: dur, top: T };
+
+    var x = S.ctx;
+    x.fillStyle = bg; x.fillRect(0, 0, S.w, S.h);
+    var fy = function (f) { return T + ph * (1 - f / CFG.dispTop); };
+    var tx = function (t) { return L + pw * Math.max(0, Math.min(1, t / dur)); };
+
+    if (A && !A.tooShort) {
+      var dpr = S.dpr, iw = Math.round(pw * dpr), ih = Math.round(ph * dpr);
+      var img = x.createImageData(iw, ih), px = img.data;
+      var nF = A.nFrames, db = A.dispBins, disp = A.disp;
+      var lo = A.dispLo * 20, scale = 255 / ((A.dispHi - A.dispLo) * 20);
+      var rowBin = new Int32Array(ih);
+      for (var r = 0; r < ih; r++) rowBin[r] = Math.min(db - 1, Math.round((1 - (r + 0.5) / ih) * CFG.dispTop / A.df));
+      var half = A.N / 2 / A.fs, col = new Int16Array(ih);
+      for (var c = 0; c < iw; c++) {
+        var ta = c / iw * dur, tb = (c + 1) / iw * dur;
+        var f0i = Math.max(0, Math.min(nF - 1, Math.round((ta - half) / A.frameSec)));
+        var f1i = Math.max(f0i + 1, Math.min(nF, Math.round((tb - half) / A.frameSec)));
+        for (r = 0; r < ih; r++) col[r] = -32768;
+        for (var t = f0i; t < f1i; t++) {
+          var base = t * db;
+          for (r = 0; r < ih; r++) { var v = disp[base + rowBin[r]]; if (v > col[r]) col[r] = v; }
+        }
+        for (r = 0; r < ih; r++) {
+          var q = (col[r] - lo) * scale; q = q < 0 ? 0 : q > 255 ? 255 : q | 0;
+          var o = (r * iw + c) * 4, l = q * 3;
+          px[o] = LUT[l]; px[o + 1] = LUT[l + 1]; px[o + 2] = LUT[l + 2]; px[o + 3] = 255;
+        }
+      }
+      x.putImageData(img, Math.round(L * dpr), Math.round(T * dpr));
+    } else {
+      x.fillStyle = 'rgba(255,255,255,0.03)';
+      x.fillRect(L, T, pw, ph);
+    }
+
+    // frequency grid + labels
+    x.font = mono; x.textBaseline = 'middle'; x.textAlign = 'right';
+    for (var f = 500; f <= CFG.dispTop; f += 500) {
+      var yy = Math.round(fy(f)) + 0.5;
+      x.strokeStyle = grid; x.globalAlpha = 0.55; x.lineWidth = 1;
+      x.beginPath(); x.moveTo(L, yy); x.lineTo(L + pw, yy); x.stroke();
+      x.globalAlpha = 1; x.fillStyle = ink;
+      x.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), L - 9, yy);
+    }
+    x.textAlign = 'left'; x.fillText('Hz', 0, T - 12);
+    // wingbeat band
+    x.fillStyle = signal; x.globalAlpha = 0.85;
+    x.fillRect(L - 5, fy(CFG.fMax), 3, fy(CFG.fMin) - fy(CFG.fMax));
+    x.globalAlpha = 1;
+
+    // passes: brackets and pitch ticks
+    if (D && D.events.length) {
+      x.strokeStyle = signal; x.fillStyle = signal; x.lineWidth = 1.5;
+      x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+      var lastLabelX = -1e9;
+      D.events.forEach(function (e) {
+        var a = tx(e.start), b = Math.max(tx(e.end), a + 3), yb = T - 9;
+        x.beginPath(); x.moveTo(a, yb + 5); x.lineTo(a, yb); x.lineTo(b, yb); x.lineTo(b, yb + 5); x.stroke();
+        var mid = (a + b) / 2;
+        if (mid - lastLabelX > 18) { x.fillText(String(e.n), mid, yb - 4); lastLabelX = mid; }
+        var yf = fy(e.f0);
+        x.beginPath(); x.moveTo(L - 1, yf); x.lineTo(L - 8, yf - 4); x.lineTo(L - 8, yf + 4); x.closePath(); x.fill();
+      });
+    }
+
+    // score strip
+    var y = C.ctx, CT = 4, CB = 22, ch = C.h - CT - CB;
+    y.fillStyle = bg; y.fillRect(0, 0, C.w, C.h);
+    y.fillStyle = 'rgba(255,255,255,0.03)'; y.fillRect(L, CT, pw, ch);
+    var thr = D ? D.T.sal : WB.SENS[state.sens].sal;
+    var ymax = Math.max(60, thr * 2.4);
+    var sy = function (v) { return CT + ch * (1 - Math.max(0, Math.min(v, ymax)) / ymax); };
+    if (A && !A.tooShort && D) {
+      D.events.forEach(function (e) {
+        y.fillStyle = signal; y.globalAlpha = 0.16;
+        y.fillRect(tx(e.start), CT, Math.max(2, tx(e.end) - tx(e.start)), ch);
+      });
+      y.globalAlpha = 1;
+      var cols = Math.max(2, Math.round(pw)), half2 = A.N / 2 / A.fs;
+      var colMax = new Float32Array(cols), colCand = new Uint8Array(cols);
+      for (var k = 0; k < cols; k++) {
+        var ta2 = k / cols * dur, tb2 = (k + 1) / cols * dur;
+        var g0 = Math.max(0, Math.min(A.nFrames - 1, Math.round((ta2 - half2) / A.frameSec)));
+        var g1 = Math.max(g0 + 1, Math.min(A.nFrames, Math.round((tb2 - half2) / A.frameSec)));
+        var m = 0, cd = 0;
+        for (var t2 = g0; t2 < g1; t2++) { if (A.sal[t2] > m) m = A.sal[t2]; if (D.cand[t2]) cd = 1; }
+        colMax[k] = m; colCand[k] = cd;
+      }
+      y.beginPath(); y.moveTo(L, sy(0));
+      for (k = 0; k < cols; k++) y.lineTo(L + (k + 0.5) * pw / cols, sy(colMax[k]));
+      y.lineTo(L + pw, sy(0)); y.closePath();
+      y.fillStyle = ink; y.globalAlpha = 0.32; y.fill(); y.globalAlpha = 1;
+      y.fillStyle = signal;
+      for (k = 0; k < cols; k++) if (colCand[k] && colMax[k] >= thr) {
+        var X = L + k * pw / cols;
+        y.fillRect(X, sy(colMax[k]), Math.max(1, pw / cols), sy(thr) - sy(colMax[k]));
+      }
+    }
+    y.strokeStyle = signal; y.lineWidth = 1; y.setLineDash([4, 4]);
+    y.beginPath(); y.moveTo(L, Math.round(sy(thr)) + 0.5); y.lineTo(L + pw, Math.round(sy(thr)) + 0.5); y.stroke();
+    y.setLineDash([]);
+    y.font = mono; y.fillStyle = ink; y.textAlign = 'right'; y.textBaseline = 'middle';
+    y.fillText('score', L - 6, CT + ch / 2);
+    // time axis
+    y.textAlign = 'center'; y.textBaseline = 'alphabetic';
+    var step = niceStep(dur, pw);
+    if (live.on) {
+      y.textAlign = 'center';
+      for (var ago = 0; ago <= dur + 1e-6; ago += step) {
+        var Xl = tx(dur - ago);
+        y.strokeStyle = grid; y.beginPath(); y.moveTo(Math.round(Xl) + 0.5, CT + ch); y.lineTo(Math.round(Xl) + 0.5, CT + ch + 4); y.stroke();
+        if (ago === 0) { y.textAlign = 'right'; y.fillText('now', L + pw, C.h - 5); y.textAlign = 'center'; }
+        else if (Xl > L + 12) y.fillText('\u2212' + ago, Xl, C.h - 5);
+      }
+      y.textAlign = 'right'; y.fillText('s', L - 6, C.h - 5);
+      return;
+    }
+    for (var s = 0; s <= dur + 1e-6; s += step) {
+      var X2 = tx(s);
+      y.strokeStyle = grid; y.beginPath(); y.moveTo(Math.round(X2) + 0.5, CT + ch); y.lineTo(Math.round(X2) + 0.5, CT + ch + 4); y.stroke();
+      var label = dur >= 120 ? mmss(s) : (step < 1 ? s.toFixed(1) : String(s));
+      if (X2 > L + 4 && X2 < L + pw - 10) y.fillText(label, X2, C.h - 5);
+    }
+    y.textAlign = 'right'; y.fillText(dur >= 120 ? 'm:s' : 's', L - 6, C.h - 5);
+    movePlayhead();
+  }
+
+  // ---------- passes ----------
+  var ICON_PLAY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>';
+  var ICON_STOP = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>';
+
+  function passRow(e, isLive) {
+    var li = document.createElement('li'); li.className = 'pass';
+    var num = document.createElement('span'); num.className = 'num'; num.textContent = e.n;
+    var body = document.createElement('div');
+    var main = document.createElement('div'); main.className = 'pass-main';
+    var when = document.createElement('span');
+    when.textContent = isLive ? 'at ' + mmss(e.start) + ' · ' + e.clock : fmtSec(e.start) + '–' + fmtSec(e.end) + ' s';
+    var pitch = document.createElement('span'); pitch.className = 'hz'; pitch.textContent = Math.round(e.f0 / 5) * 5 + ' Hz';
+    var lvl = document.createElement('span'); lvl.className = 'level ' + e.level; lvl.textContent = e.level;
+    main.append(when, pitch, lvl);
+    var meta = document.createElement('div'); meta.className = 'pass-meta';
+    meta.textContent = e.dur.toFixed(1) + ' s long · ' + e.harmonics + ' harmonics · fundamental ' + Math.max(0, Math.round(e.aboveBg)) + ' dB above the gaps';
+    body.append(main, meta);
+    var ref = refFor(e.f0);
+    if (ref) { var rf = document.createElement('div'); rf.className = 'pass-ref'; rf.textContent = 'Pitch near the ' + ref.name.replace(' \u2640', '').replace(' ♀', '').toLowerCase() + ' reference'; body.appendChild(rf); }
+    li.append(num, body);
+    if (isLive) { li.appendChild(document.createElement('span')); return li; }
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'pass-play';
+    btn.dataset.n = e.n;
+    btn.setAttribute('aria-label', 'Play pass ' + e.n);
+    btn.setAttribute('aria-pressed', audio.passN === e.n ? 'true' : 'false');
+    btn.innerHTML = audio.passN === e.n ? ICON_STOP : ICON_PLAY;
+    btn.addEventListener('click', function () {
+      if (audio.passN === e.n) { stopPlay(); return; }
+      play(Math.max(0, e.start - 0.3), Math.min(e.dur + 0.6, 8), e.n);
+    });
+    li.appendChild(btn);
+    return li;
+  }
+
+  function renderPasses() {
+    var list = $('#passes'), more = $('#more'), count = $('#passCount');
+    list.textContent = '';
+    more.hidden = true;
+    if (live.on) {
+      var lg = live.log.slice().reverse();
+      count.textContent = lg.length ? lg.length + ' this session, newest first' : '';
+      if (!lg.length) { var li1 = document.createElement('li'); li1.className = 'empty'; li1.textContent = 'Nothing yet. Passes appear here a second after they end.'; list.appendChild(li1); return; }
+      lg.slice(0, state.showAll ? lg.length : VISIBLE).forEach(function (e) { list.appendChild(passRow(e, true)); });
+      if (lg.length > VISIBLE) { more.hidden = false; more.textContent = state.showAll ? 'Show fewer' : 'Show all ' + lg.length + ' passes'; }
+      return;
+    }
+    if (!state.D) { count.textContent = ''; var li0 = document.createElement('li'); li0.className = 'empty'; li0.textContent = 'Analyzing…'; list.appendChild(li0); return; }
+    var ev = state.D.events;
+    count.textContent = ev.length ? ev.length + ' at ' + state.sens + ' sensitivity' : '';
+    if (!ev.length) {
+      var li = document.createElement('li'); li.className = 'empty';
+      li.textContent = state.A.tooShort ? 'Nothing to show yet.' : 'No passes at this sensitivity.';
+      list.appendChild(li);
+      return;
+    }
+    var shown = state.showAll ? ev : ev.slice(0, VISIBLE);
+    shown.forEach(function (e) { list.appendChild(passRow(e, false)); });
+    if (ev.length > VISIBLE) {
+      more.hidden = false;
+      more.textContent = state.showAll ? 'Show fewer' : 'Show all ' + ev.length + ' passes';
+    }
+  }
+  $('#more').addEventListener('click', function () { state.showAll = !state.showAll; renderPasses(); });
+
+  // ---------- ruler ----------
+  function renderRuler() {
+    var el = $('#ruler');
+    el.textContent = '';
+    var lo = CFG.fMin, hi = CFG.fMax;
+    var pct = function (f) { return ((f - lo) / (hi - lo) * 100); };
+    var track = document.createElement('div'); track.className = 'track'; el.appendChild(track);
+    REF.forEach(function (r, i) {
+      var b = document.createElement('div'); b.className = 'band b' + i;
+      b.style.left = pct(r.lo) + '%'; b.style.width = (pct(r.hi) - pct(r.lo)) + '%';
+      el.appendChild(b);
+    });
+    [300, 400, 500, 600, 700, 800, 900].forEach(function (f) {
+      var t = document.createElement('div'); t.className = 'tick'; t.style.left = pct(f) + '%';
+      t.textContent = f === 900 ? '900 Hz' : String(f);
+      el.appendChild(t);
+    });
+    var marks = live.on ? live.log : (state.D ? state.D.events : []);
+    marks.forEach(function (e) {
+      var m = document.createElement('div'); m.className = 'mark';
+      m.style.left = Math.max(0, Math.min(100, pct(e.f0))) + '%';
+      m.title = 'Pass ' + e.n + ': ' + Math.round(e.f0) + ' Hz';
+      el.appendChild(m);
+    });
+  }
+
+  // ---------- playback ----------
+  function ensureCtx() {
+    if (!audio.ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audio.ctx = new AC();
+    }
+    if (audio.ctx.state === 'suspended') audio.ctx.resume();
+    return audio.ctx;
+  }
+  function getBuffer(ctx) {
+    var s = state.src;
+    if (audio.buf && audio.bufSrc === s) return audio.buf;
+    var buf = ctx.createBuffer(1, s.x.length, s.sr);
+    if (buf.copyToChannel) buf.copyToChannel(s.x, 0); else buf.getChannelData(0).set(s.x);
+    var peak = 0;
+    for (var i = 0; i < s.x.length; i += 3) { var a = Math.abs(s.x[i]); if (a > peak) peak = a; }
+    s.gain = peak > 0 ? Math.min(10, 0.9 / peak) : 1;
+    audio.buf = buf; audio.bufSrc = s;
+    return buf;
+  }
+  function play(from, dur, passN) {
+    if (!state.src) return;
+    stopPlay();
+    var ctx;
+    try { ctx = ensureCtx(); } catch (e) { return; }
+    var total = state.src.x.length / state.src.sr;
+    from = Math.max(0, Math.min(from, total - 0.05));
+    var until = dur ? Math.min(total, from + dur) : total;
+    var node = ctx.createBufferSource();
+    node.buffer = getBuffer(ctx);
+    var g = ctx.createGain(); g.gain.value = state.src.gain || 1;
+    node.connect(g); g.connect(ctx.destination);
+    node.start(0, from, until - from);
+    audio.node = node; audio.t0 = ctx.currentTime; audio.from = from; audio.until = until; audio.passN = passN || 0;
+    node.onended = function () { if (audio.node === node) stopPlay(); };
+    $('#playhead').hidden = false;
+    setPlayUI(true);
+    var tick = function () { movePlayhead(); audio.raf = requestAnimationFrame(tick); };
+    audio.raf = requestAnimationFrame(tick);
+  }
+  function stopPlay() {
+    if (audio.node) { try { audio.node.onended = null; audio.node.stop(); } catch (e) {} }
+    audio.node = null;
+    cancelAnimationFrame(audio.raf);
+    var hadPass = audio.passN;
+    audio.passN = 0;
+    $('#playhead').hidden = true;
+    setPlayUI(false);
+    if (hadPass) renderPassButtons();
+  }
+  function setPlayUI(on) {
+    var whole = on && !audio.passN;
+    $('#playLabel').textContent = whole ? 'Stop' : 'Play';
+    $('#playIcon').setAttribute('d', whole ? 'M3.5 3.5h9v9h-9z' : 'M4 2.5v11l9-5.5z');
+    renderPassButtons();
+  }
+  function renderPassButtons() {
+    document.querySelectorAll('.pass-play').forEach(function (b) {
+      var on = +b.dataset.n === audio.passN && audio.node;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.setAttribute('aria-label', (on ? 'Stop pass ' : 'Play pass ') + b.dataset.n);
+      b.innerHTML = on ? ICON_STOP : ICON_PLAY;
+    });
+  }
+  function movePlayhead() {
+    var ph = $('#playhead');
+    if (!audio.node || !geo) return;
+    var t = audio.from + (audio.ctx.currentTime - audio.t0);
+    if (t > audio.until) t = audio.until;
+    var x = 10 + geo.L + geo.pw * Math.max(0, Math.min(1, t / geo.dur));
+    ph.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
+  }
+
+  $('#play').addEventListener('click', function () {
+    if (audio.node && !audio.passN) { stopPlay(); return; }
+    play(0);
+  });
+  $('#screen').addEventListener('click', function (ev) {
+    if (live.on || !state.A || !geo) return;
+    var r = ev.currentTarget.getBoundingClientRect();
+    var x = ev.clientX - r.left - 10 - geo.L;
+    var t = Math.max(0, Math.min(1, x / geo.pw)) * geo.dur;
+    play(t);
+  });
+
+
+  // ---------- live microphone ----------
+  function clockOf(ms) { var d = new Date(ms); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+
+  function setControls(listening) {
+    $('#play').disabled = listening || !state.A;
+    $('#sample').disabled = listening;
+    $('#file').disabled = listening;
+    $('.filepick').classList.toggle('is-disabled', listening);
+    var lb = $('#live');
+    if (lb) {
+      lb.classList.toggle('on', listening);
+      $('#liveLabel').textContent = listening ? 'Stop listening' : 'Listen live';
+      $('#liveIcon').setAttribute('d', listening ? 'M4 4h8v8H4z' : 'M8 1.8a2.3 2.3 0 0 0-2.3 2.3v3.6a2.3 2.3 0 0 0 4.6 0V4.1A2.3 2.3 0 0 0 8 1.8zM3.6 7.4a4.4 4.4 0 0 0 8.8 0M8 11.8v2.4');
+    }
+    $('#meter').hidden = !listening;
+  }
+
+  function liveError(err) {
+    var name = err && err.name;
+    if (name === 'NotAllowedError' || name === 'SecurityError') showError('Microphone access was blocked', 'Allow the microphone for this site in your browser settings, then tap Listen live again.');
+    else if (name === 'NotFoundError' || name === 'OverconstrainedError') showError('No microphone found', 'This device did not offer a microphone to the page.');
+    else showError("Couldn't start the microphone", 'Open this page in Safari or Chrome directly. Some in-app browsers block the microphone.');
+  }
+
+  function startLive() {
+    if (live.on || live.starting) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { liveError({ name: 'Unsupported' }); return; }
+    stopPlay();
+    state.job++;
+    live.starting = true;
+    var AC = window.AudioContext || window.webkitAudioContext, ctx;
+    try { ctx = new AC(); } catch (e) { live.starting = false; liveError(e); return; }
+    if (ctx.resume) ctx.resume();
+    var v = $('#verdict');
+    v.dataset.state = 'busy';
+    $('#vtitle').textContent = 'Starting the microphone…';
+    $('#vsub').textContent = 'Your browser will ask for permission.';
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } })
+      .then(function (stream) {
+        var src = ctx.createMediaStreamSource(stream);
+        var proc = ctx.createScriptProcessor(4096, 1, 1);
+        var dec = WB.makeDecimator(ctx.sampleRate);
+        live = {
+          on: true, starting: false, ctx: ctx, stream: stream, src: src, proc: proc, dec: dec, fs: dec.fs,
+          buf: new Float32Array(Math.ceil(LIVE_KEEP * dec.fs)), len: 0, offset: 0,
+          log: [], cur: null, startClock: Date.now(), level: 0, timer: 0, wake: null, busy: false
+        };
+        proc.onaudioprocess = function (e) {
+          var inp = e.inputBuffer.getChannelData(0);
+          var out = e.outputBuffer.getChannelData(0);
+          for (var i = 0; i < out.length; i++) out[i] = 0;
+          if (!live.on) return;
+          var sq = 0; for (i = 0; i < inp.length; i++) sq += inp[i] * inp[i];
+          var lvl = Math.sqrt(sq / inp.length);
+          live.level = Math.max(lvl, live.level * 0.85);
+          var y = live.dec.push(inp);
+          if (live.len + y.length > live.buf.length) {
+            var drop = Math.ceil(120 * live.fs);
+            live.buf.copyWithin(0, drop, live.len);
+            live.len -= drop; live.offset += drop;
+          }
+          live.buf.set(y, live.len); live.len += y.length;
+        };
+        src.connect(proc); proc.connect(ctx.destination);
+        state.A = null; state.D = null; state.showAll = false;
+        holdWake();
+        setControls(true);
+        renderLive();
+        drawScreen();
+        renderPasses();
+        renderRuler();
+        live.timer = setInterval(liveTick, LIVE_STEP);
+      })
+      .catch(function (err) {
+        live.starting = false;
+        try { ctx.close(); } catch (e) {}
+        liveError(err);
+      });
+  }
+
+  function holdWake() {
+    if (!navigator.wakeLock || !live.on) return;
+    navigator.wakeLock.request('screen').then(function (w) { live.wake = w; }).catch(function () {});
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (live.on && document.visibilityState === 'visible') holdWake();
+  });
+
+  function logPass(e, as, ae) {
+    for (var i = 0; i < live.log.length; i++) {
+      var g = live.log[i];
+      if (as < g.end + 0.5 && ae > g.start - 0.5) {
+        if (e.strength > g.strength) { g.f0 = e.f0; g.strength = e.strength; g.level = e.level; g.harmonics = e.harmonics; g.aboveBg = e.aboveBg; }
+        g.start = Math.min(g.start, as); g.end = Math.max(g.end, ae); g.dur = g.end - g.start;
+        return false;
+      }
+    }
+    live.log.push({ n: live.log.length + 1, start: as, end: ae, dur: ae - as, f0: e.f0, strength: e.strength, level: e.level,
+      harmonics: e.harmonics, aboveBg: e.aboveBg, clock: clockOf(live.startClock + as * 1000) });
+    return true;
+  }
+
+  function liveTick() {
+    if (!live.on || live.busy) return;
+    live.busy = true;
+    try {
+      var secs = live.len / live.fs;
+      var added = false, current = null;
+      if (secs >= LIVE_MIN) {
+        var n = Math.min(live.len, Math.round(LIVE_WIN * live.fs));
+        var w = live.buf.slice(live.len - n, live.len);
+        var A = {};
+        WB.runSync(WB.analyzeGen(w, live.fs, A));
+        var D = A.tooShort ? { events: [], cand: new Uint8Array(0), T: WB.SENS[state.sens] } : WB.detectEvents(A, state.sens);
+        var wStart = (live.offset + live.len - n) / live.fs, wEnd = wStart + n / live.fs;
+        D.events.forEach(function (e) {
+          var as = wStart + e.start, ae = wStart + e.end;
+          if (ae >= wEnd - 0.8) { if (!current || e.strength > current.strength) current = { f0: e.f0, strength: e.strength, level: e.level, start: as, end: ae }; }
+          else if (logPass(e, as, ae)) added = true;
+        });
+        state.src = { x: w, sr: live.fs, name: 'Microphone', live: true };
+        state.A = A; state.D = D;
+        if (current && current.level !== 'weak' && !(live.cur && live.cur.level !== 'weak')) {
+          try { if (navigator.vibrate) navigator.vibrate(180); } catch (e) {}
+        }
+        live.cur = current;
+        drawScreen();
+        if (added) { renderPasses(); renderRuler(); }
+      }
+      renderLive();
+    } finally { live.busy = false; }
+  }
+
+  function renderLive() {
+    var v = $('#verdict'), t = $('#vtitle'), sub = $('#vsub');
+    $('#progress').hidden = true;
+    var secs = (live.offset + live.len) / live.fs;
+    var el = $('#source'); el.textContent = '';
+    var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'Live';
+    var nm = document.createElement('b'); nm.textContent = 'Microphone';
+    var dur = document.createElement('span'); dur.textContent = mmss(secs);
+    el.append(tag, nm, dur);
+    var cur = live.cur && live.cur.level !== 'weak' ? live.cur : null;
+    var real = live.log.filter(function (g) { return g.level !== 'weak'; });
+    if (cur) {
+      v.dataset.state = 'found';
+      t.textContent = 'Buzz right now';
+      sub.textContent = '';
+      appendRich(sub, [['Pitch ', false], [Math.round(cur.f0 / 5) * 5 + ' Hz', true], [', ' + (cur.end - cur.start).toFixed(1) + ' s so far.', false]]);
+    } else {
+      v.dataset.state = 'listening';
+      t.textContent = secs < LIVE_MIN ? 'Calibrating to the room…' : 'Listening…';
+      if (live.log.length) {
+        var last = live.log[live.log.length - 1];
+        sub.textContent = '';
+        appendRich(sub, [[live.log.length + (live.log.length === 1 ? ' pass' : ' passes'), true],
+          [' so far' + (real.length < live.log.length ? ' (' + (live.log.length - real.length) + ' weak)' : '') + '. Last at ' + last.clock + ', ', false],
+          [Math.round(last.f0 / 5) * 5 + ' Hz', true], ['.', false]]);
+      } else {
+        sub.textContent = secs < LIVE_MIN ? 'Keep the room quiet for a few seconds.' : 'Nothing yet. Keep the phone within about 20 cm of where you hear it.';
+      }
+    }
+    var db = live.level > 0 ? 20 * Math.log10(live.level) : -100;
+    var pctv = Math.max(0, Math.min(100, (db + 80) / 60 * 100));
+    $('#meter > .bar > i').style.width = pctv.toFixed(0) + '%';
+    $('#meterDb').textContent = (db < -99 ? '−∞' : '−' + Math.abs(Math.round(db))) + ' dB';
+  }
+
+  function stopLive() {
+    if (!live.on) return;
+    clearInterval(live.timer);
+    live.on = false;
+    try { live.proc.onaudioprocess = null; live.proc.disconnect(); live.src.disconnect(); } catch (e) {}
+    try { live.stream.getTracks().forEach(function (tr) { tr.stop(); }); } catch (e) {}
+    try { live.ctx.close(); } catch (e) {}
+    try { if (live.wake) live.wake.release(); } catch (e) {}
+    setControls(false);
+    var keep = Math.round(CFG.maxSec * live.fs), n = Math.min(live.len, keep);
+    var x = live.buf.slice(live.len - n, live.len);
+    var sessionName = 'Started ' + clockOf(live.startClock);
+    if (n < live.fs) { showError('Too short to review', 'Listen for at least a few seconds.'); return; }
+    analyzeSource({ x: x, sr: live.fs, name: sessionName, isSample: false, session: true, trimmed: live.offset + live.len > keep, trimmedLast: true,
+      note: '' }).then(function () { setControls(false); });
+  }
+
+  if ($('#live')) {
+    $('#live').addEventListener('click', function () { if (live.on) stopLive(); else startLive(); });
+    setInterval(function () { if (live.on) { var db = live.level > 0 ? 20 * Math.log10(live.level) : -100; $('#meter > .bar > i').style.width = Math.max(0, Math.min(100, (db + 80) / 60 * 100)).toFixed(0) + '%'; } }, 120);
+  }
+
+  // ---------- loading ----------
+  function loadSample() {
+    var x = WB.synthSample(SAMPLE_SR);
+    return analyzeSource({ x: x, sr: SAMPLE_SR, name: 'Night-time bedroom', isSample: true, note: 'Two fly-bys, a voice and a couple of knocks, generated in your browser.' });
+  }
+
+  function readBuffer(file) {
+    if (file.arrayBuffer) return file.arrayBuffer();
+    return new Promise(function (res, rej) { var fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = rej; fr.readAsArrayBuffer(file); });
+  }
+  function decode(ab) {
+    var ctx = null, OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    try { ctx = new OAC(1, 1, 44100); } catch (e) { ctx = null; }
+    if (!ctx) ctx = ensureCtx();
+    return new Promise(function (res, rej) {
+      try {
+        var p = ctx.decodeAudioData(ab, res, rej);
+        if (p && p.then) p.then(res, rej);
+      } catch (e) { rej(e); }
+    });
+  }
+  function showError(title, msg) {
+    var v = $('#verdict');
+    v.dataset.state = 'error';
+    $('#progress').hidden = true;
+    $('#vtitle').textContent = title;
+    $('#vsub').textContent = msg;
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    stopPlay();
+    state.job++;
+    var v = $('#verdict');
+    v.dataset.state = 'busy';
+    var el = $('#source'); el.textContent = '';
+    var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'Your recording';
+    var nm = document.createElement('b'); nm.textContent = file.name || 'Recording';
+    el.append(tag, nm);
+    $('#vtitle').textContent = 'Reading the file…';
+    $('#vsub').textContent = '';
+    $('#progress').hidden = false; $('#progress > i').style.width = '0%';
+    readBuffer(file).then(decode).then(function (buf) {
+      var n = buf.length, ch = buf.numberOfChannels, sr = buf.sampleRate;
+      var maxN = Math.floor(CFG.maxSec * sr), trimmed = n > maxN;
+      var len = Math.min(n, maxN), x = new Float32Array(len);
+      for (var c = 0; c < ch; c++) {
+        var d = buf.getChannelData(c);
+        for (var i = 0; i < len; i++) x[i] += d[i] / ch;
+      }
+      return analyzeSource({ x: x, sr: sr, name: file.name || 'Recording', isSample: false, trimmed: trimmed, note: '' });
+    }).catch(function () {
+      showError("Couldn't read this file", 'Try an .m4a, .mp3 or .wav recording. Some voice-note formats, like .amr, aren’t supported by browsers.');
+    });
+  }
+
+  $('#file').addEventListener('change', function (e) { var f = e.target.files && e.target.files[0]; e.target.value = ''; loadFile(f); });
+  $('#sample').addEventListener('click', loadSample);
+  document.querySelectorAll('input[name="sens"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      if (!r.checked) return;
+      state.sens = r.value;
+      try { localStorage.setItem('wingbeat-sens', r.value); } catch (e) {}
+      state.showAll = false;
+      if (live.on) return;
+      redetect();
+      if (!state.A) drawScreen();
+    });
+  });
+
+  var app = $('#app');
+  document.addEventListener('dragover', function (e) { e.preventDefault(); app.classList.add('dropping'); });
+  document.addEventListener('dragleave', function (e) { if (e.target === document.documentElement || !e.relatedTarget) app.classList.remove('dropping'); });
+  document.addEventListener('drop', function (e) {
+    e.preventDefault(); app.classList.remove('dropping');
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  // redraw on resize, theme change and font load
+  var rt = 0;
+  function scheduleDraw() { clearTimeout(rt); rt = setTimeout(drawScreen, 60); }
+  if (window.ResizeObserver) new ResizeObserver(scheduleDraw).observe($('#screen'));
+  else window.addEventListener('resize', scheduleDraw);
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', scheduleDraw); } catch (e) {}
+  new MutationObserver(scheduleDraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleDraw);
+
+  renderRuler();
+  loadSample();
+})();
+
+</script>
+
+</body></html>

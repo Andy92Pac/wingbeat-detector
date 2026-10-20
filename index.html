@@ -318,7 +318,36 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .verdict[data-state="listening"] .dot { background: var(--calm); animation: breathe 2.4s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: 0.3; } }
 
+.liveopts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; min-height: 40px; cursor: pointer; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent-fill); margin: 0; }
+.btn.small { min-height: 40px; padding: 0 12px; font-size: 14px; }
+
+/* Night screen and alert: a deliberate single look, black while waiting, amber when it hears one */
+.watch {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  background: #000; color: #5d6274;
+  text-align: center;
+}
+.watch-inner { display: grid; gap: 14px; justify-items: center; max-width: 30rem; }
+.watch p { margin: 0; }
+.watch-state { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; }
+.watch-big { font-family: var(--font-display); font-weight: 750; font-size: clamp(30px, 9vw, 48px); line-height: 1.05; color: #7c8194; text-wrap: balance; }
+.watch-meta { font-family: var(--font-mono); font-size: 14px; }
+.watch-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 10px; }
+.watch .btn { background: transparent; border-color: #2a2d38; color: #7c8194; }
+.watch[data-mode="dim"] #watchDismiss { display: none; }
+.watch[data-mode="alert"] { background: #f3b13f; color: #1d1304; animation: alertpulse 1.6s ease-in-out infinite; }
+.watch[data-mode="alert"] .watch-big { color: #1d1304; font-size: clamp(40px, 13vw, 72px); }
+.watch[data-mode="alert"] .btn { border-color: #1d1304; color: #1d1304; }
+.watch[data-mode="alert"] #watchDismiss { background: #1d1304; color: #f3b13f; }
+.watch[data-mode="alert"] #watchExit { display: none; }
+@keyframes alertpulse { 50% { background: #ffd27a; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .watch[data-mode="alert"] { animation: none; }
   .verdict[data-state="listening"] .dot { animation: none; }
   .meter .bar i { transition: none; }
   .progress > i { transition: none; }
@@ -357,15 +386,21 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       </button>
       <button class="btn ghost" id="sample" type="button">Use the sample</button>
     </div>
+    <div class="liveopts">
+      <label class="check"><input type="checkbox" id="alarmOn" checked> Alarm sound</label>
+      <button class="btn ghost small" id="testAlarm" type="button">Test alarm</button>
+      <button class="btn ghost small" id="night" type="button" disabled>Night screen</button>
+    </div>
     <fieldset class="seg">
       <legend>Sensitivity</legend>
       <span class="opts">
         <label><input type="radio" name="sens" id="sens-strict" value="strict">Strict</label>
         <label><input type="radio" name="sens" id="sens-normal" value="normal" checked>Normal</label>
         <label><input type="radio" name="sens" id="sens-sensitive" value="sensitive">Sensitive</label>
+        <label><input type="radio" name="sens" id="sens-long" value="long">Long range</label>
       </span>
     </fieldset>
-        <p class="note">Tap Listen live and set the phone down near where you hear the buzz, microphone end towards it. The page keeps the screen awake while it listens; locking the phone stops it. Audio stays on this device and is never uploaded.</p>
+        <p class="note">Tap Listen live and put the phone by your pillow, microphone end up. Mosquitoes come to your head to bite, so that's where it will hear them. When it does, the screen turns amber and the alarm beeps (at most every 15 s). Night screen dims everything while it waits. Keep the phone unlocked; locking it stops listening. Audio never leaves this device.</p>
   </section>
 
   <figure class="screen-fig">
@@ -409,7 +444,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     </div>
     <div class="block">
       <h3>How it decides</h3>
-      <p>Each 32 ms slice is compared with the recording's own quiet background, so fans and electrical hum drop out. In what's left, it looks for a tone between 280 and 950 Hz whose harmonics stand well clear of the gaps between them, and only counts it if the pitch holds for about a third of a second.</p>
+      <p>Each 32 ms slice is compared with the recording's own quiet background, so fans and electrical hum drop out. In what's left, it looks for a tone between 280 and 950 Hz whose harmonics stand well clear of the gaps between them, and only counts it if the pitch holds for about a third of a second. Long range averages over almost a second, which picks up a buzz about half as loud (roughly twice the distance) but reacts a bit slower.</p>
     </div>
     <div class="block">
       <h3>What fools it</h3>
@@ -420,6 +455,17 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
   <p class="foot">Runs entirely in your browser. Recordings longer than 5 minutes are trimmed to the first 5.</p>
 </div>
 
+<div class="watch" id="watch" hidden data-mode="dim" role="alertdialog" aria-live="assertive" aria-labelledby="watchBig">
+  <div class="watch-inner">
+    <p class="watch-state" id="watchState">Listening</p>
+    <p class="watch-big" id="watchBig">No mosquito heard</p>
+    <p class="watch-meta" id="watchMeta"></p>
+    <div class="watch-actions">
+      <button class="btn" id="watchDismiss" type="button">Dismiss</button>
+      <button class="btn ghost" id="watchExit" type="button">Exit night screen</button>
+    </div>
+  </div>
+</div>
 <script>window.WINGBEAT_LIVE = true;</script>
 <script>
 /* Wingbeat DSP: shared by the page and the Node tests. */
@@ -440,10 +486,12 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     maxSec: 300
   };
 
+  // smooth: frames of power averaging (32 ms each); cmin: dB a harmonic must clear the gaps by
   var SENS = {
-    strict:    { sal: 26, minDur: 0.45, minFrames: 10, strong: 38 },
-    normal:    { sal: 20, minDur: 0.30, minFrames: 7,  strong: 34 },
-    sensitive: { sal: 15, minDur: 0.22, minFrames: 5,  strong: 30 }
+    strict:    { sal: 26, minDur: 0.45, minFrames: 10, strong: 38, smooth: 3,  cmin: 6 },
+    normal:    { sal: 20, minDur: 0.30, minFrames: 7,  strong: 34, smooth: 3,  cmin: 6 },
+    sensitive: { sal: 15, minDur: 0.22, minFrames: 5,  strong: 30, smooth: 3,  cmin: 6 },
+    long:      { sal: 16, minDur: 0.70, minFrames: 20, strong: 34, smooth: 25, cmin: 4 }
   };
 
   function makeFFT(n) {
@@ -578,14 +626,16 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       if ((t & 255) === 255) yield 0.35 + 0.35 * t / nFrames;
     }
 
-    // 3-frame smoothed dB for analysis
+    // Time-smoothed dB for analysis: 3 frames normally, more in long-range mode
+    var half = Math.max(1, Math.floor((A.smooth || 3) / 2));
+    A.smooth = 2 * half + 1;
     var Ps = new Float32Array(nFrames * nBins);
-    for (t = 0; t < nFrames; t++) {
-      var t0 = Math.max(0, t - 1), t1 = Math.min(nFrames - 1, t + 1), cnt = t1 - t0 + 1;
-      for (k = 0; k < nBins; k++) {
-        var s = 0;
-        for (var u = t0; u <= t1; u++) s += pow[u * nBins + k];
-        Ps[t * nBins + k] = 10 * Math.log10(s / cnt + EPS);
+    var csum = new Float64Array(nFrames + 1);
+    for (k = 0; k < nBins; k++) {
+      for (t = 0; t < nFrames; t++) csum[t + 1] = csum[t] + pow[t * nBins + k];
+      for (t = 0; t < nFrames; t++) {
+        var t0 = t - half < 0 ? 0 : t - half, t1 = t + half >= nFrames ? nFrames - 1 : t + half;
+        Ps[t * nBins + k] = 10 * Math.log10((csum[t1 + 1] - csum[t0]) / (t1 - t0 + 1) + EPS);
       }
     }
     pow = null;
@@ -638,6 +688,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       return x1 > x2 ? x1 : x2;
     }
     var S = sparse[0], Sm = new Float32Array(nBins), G = new Float32Array(6);
+    var cmin = A.cmin || 6;
     A.f0 = new Float32Array(nFrames);
     A.sal = new Float32Array(nFrames);
     A.nh = new Uint8Array(nFrames);
@@ -675,7 +726,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
           var con = hv - 0.5 * (G[h] + G[h + 1]);
           if (h === 0) c1 = con;
           if (h < 2) sal += con; else if (con > 0) sal += 0.5 * con;
-          if (con >= 6) nh++;
+          if (con >= cmin) nh++;
         }
         if (sal > best) { best = sal; bf = C.f; bnh = nh; bc1 = c1; }
       }
@@ -905,7 +956,9 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
   var LIVE_WIN = 20, LIVE_STEP = 500, LIVE_MIN = 3, LIVE_KEEP = 600;
   var live = { on: false, starting: false, log: [] };
 
+  if (window.WINGBEAT_LIVE) state.sens = 'long';
   try { var saved = localStorage.getItem('wingbeat-sens'); if (saved && WB.SENS[saved]) state.sens = saved; } catch (e) {}
+  function modeA() { var P = WB.SENS[state.sens]; return { smooth: P.smooth, cmin: P.cmin }; }
   var radio = document.getElementById('sens-' + state.sens);
   if (radio) radio.checked = true;
 
@@ -944,7 +997,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     drawScreen();
     renderPasses();
     renderRuler();
-    var A = {}, gen = WB.analyzeGen(src.x, src.sr, A), last = performance.now();
+    var A = modeA(), gen = WB.analyzeGen(src.x, src.sr, A), last = performance.now();
     return new Promise(function (resolve) {
       function step() {
         if (job !== state.job) return resolve(false);
@@ -1388,6 +1441,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       $('#liveIcon').setAttribute('d', listening ? 'M4 4h8v8H4z' : 'M8 1.8a2.3 2.3 0 0 0-2.3 2.3v3.6a2.3 2.3 0 0 0 4.6 0V4.1A2.3 2.3 0 0 0 8 1.8zM3.6 7.4a4.4 4.4 0 0 0 8.8 0M8 11.8v2.4');
     }
     $('#meter').hidden = !listening;
+    $('#night').disabled = !listening;
   }
 
   function liveError(err) {
@@ -1467,12 +1521,13 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       if (as < g.end + 0.5 && ae > g.start - 0.5) {
         if (e.strength > g.strength) { g.f0 = e.f0; g.strength = e.strength; g.level = e.level; g.harmonics = e.harmonics; g.aboveBg = e.aboveBg; }
         g.start = Math.min(g.start, as); g.end = Math.max(g.end, ae); g.dur = g.end - g.start;
-        return false;
+        return null;
       }
     }
-    live.log.push({ n: live.log.length + 1, start: as, end: ae, dur: ae - as, f0: e.f0, strength: e.strength, level: e.level,
-      harmonics: e.harmonics, aboveBg: e.aboveBg, clock: clockOf(live.startClock + as * 1000) });
-    return true;
+    var entry = { n: live.log.length + 1, start: as, end: ae, dur: ae - as, f0: e.f0, strength: e.strength, level: e.level,
+      harmonics: e.harmonics, aboveBg: e.aboveBg, clock: clockOf(live.startClock + as * 1000) };
+    live.log.push(entry);
+    return entry;
   }
 
   function liveTick() {
@@ -1480,24 +1535,24 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     live.busy = true;
     try {
       var secs = live.len / live.fs;
-      var added = false, current = null;
+      var added = false, current = null, fresh = null;
       if (secs >= LIVE_MIN) {
         var n = Math.min(live.len, Math.round(LIVE_WIN * live.fs));
         var w = live.buf.slice(live.len - n, live.len);
-        var A = {};
+        var A = modeA();
         WB.runSync(WB.analyzeGen(w, live.fs, A));
         var D = A.tooShort ? { events: [], cand: new Uint8Array(0), T: WB.SENS[state.sens] } : WB.detectEvents(A, state.sens);
         var wStart = (live.offset + live.len - n) / live.fs, wEnd = wStart + n / live.fs;
         D.events.forEach(function (e) {
           var as = wStart + e.start, ae = wStart + e.end;
           if (ae >= wEnd - 0.8) { if (!current || e.strength > current.strength) current = { f0: e.f0, strength: e.strength, level: e.level, start: as, end: ae }; }
-          else if (logPass(e, as, ae)) added = true;
+          else { var np = logPass(e, as, ae); if (np) { added = true; if (np.level !== 'weak') fresh = np; } }
         });
         state.src = { x: w, sr: live.fs, name: 'Microphone', live: true };
         state.A = A; state.D = D;
-        if (current && current.level !== 'weak' && !(live.cur && live.cur.level !== 'weak')) {
-          try { if (navigator.vibrate) navigator.vibrate(180); } catch (e) {}
-        }
+        var hearing = current && current.level !== 'weak';
+        if (hearing) raiseAlert(current.f0, wEnd);
+        else if (fresh) raiseAlert(fresh.f0, fresh.end);
         live.cur = current;
         drawScreen();
         if (added) { renderPasses(); renderRuler(); }
@@ -1549,6 +1604,7 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     try { live.stream.getTracks().forEach(function (tr) { tr.stop(); }); } catch (e) {}
     try { live.ctx.close(); } catch (e) {}
     try { if (live.wake) live.wake.release(); } catch (e) {}
+    closeWatch();
     setControls(false);
     var keep = Math.round(CFG.maxSec * live.fs), n = Math.min(live.len, keep);
     var x = live.buf.slice(live.len - n, live.len);
@@ -1556,6 +1612,86 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
     if (n < live.fs) { showError('Too short to review', 'Listen for at least a few seconds.'); return; }
     analyzeSource({ x: x, sr: live.fs, name: sessionName, isSample: false, session: true, trimmed: live.offset + live.len > keep, trimmedLast: true,
       note: '' }).then(function () { setControls(false); });
+  }
+
+
+  // ---------- alerts and night screen ----------
+  var alarm = { on: true, lastBeep: -1e9, lastHeard: 0, f0: 0, active: false, night: false, timer: 0, snoozeUntil: 0 };
+  try { if (localStorage.getItem('wingbeat-alarm') === 'off') alarm.on = false; } catch (e) {}
+  function beep(ctx) {
+    if (!ctx) return;
+    try {
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+      var t = ctx.currentTime + 0.03;
+      for (var i = 0; i < 3; i++) {
+        var o = ctx.createOscillator(), g = ctx.createGain(), t0 = t + i * 0.22;
+        o.type = 'sine'; o.frequency.value = 2900;
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(0.7, t0 + 0.01);
+        g.gain.setValueAtTime(0.7, t0 + 0.12);
+        g.gain.linearRampToValueAtTime(0, t0 + 0.14);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t0); o.stop(t0 + 0.16);
+      }
+    } catch (e) {}
+  }
+  function raiseAlert(f0, heardAt) {
+    var now = Date.now();
+    alarm.lastHeard = now; alarm.f0 = f0;
+    if (now < alarm.snoozeUntil) { updateWatch(); return; }
+    if (!alarm.active) {
+      alarm.active = true;
+      try { if (navigator.vibrate) navigator.vibrate([200, 120, 200]); } catch (e) {}
+    }
+    if (alarm.on && now - alarm.lastBeep > 15000) { alarm.lastBeep = now; beep(live.ctx); }
+    showWatch();
+  }
+  function showWatch() {
+    var w = $('#watch');
+    if (!w) return;
+    w.hidden = !(alarm.active || alarm.night);
+    w.dataset.mode = alarm.active ? 'alert' : 'dim';
+    updateWatch();
+    if (!alarm.timer) alarm.timer = setInterval(updateWatch, 1000);
+  }
+  function updateWatch() {
+    var w = $('#watch');
+    if (!w || w.hidden) return;
+    var secs = live.fs ? (live.offset + live.len) / live.fs : 0;
+    var db = live.level > 0 ? 20 * Math.log10(live.level) : -100;
+    var meta = mmss(secs) + ' listening · ' + live.log.length + (live.log.length === 1 ? ' pass' : ' passes') + ' · mic ' + (db < -99 ? '−∞' : '−' + Math.abs(Math.round(db))) + ' dB';
+    if (alarm.active) {
+      var ago = Math.max(0, Math.round((Date.now() - alarm.lastHeard) / 1000));
+      $('#watchState').textContent = ago <= 2 ? 'Hearing it now' : 'Last heard ' + ago + ' s ago';
+      $('#watchBig').textContent = 'Mosquito nearby';
+      $('#watchMeta').textContent = Math.round(alarm.f0 / 5) * 5 + ' Hz · ' + meta;
+    } else {
+      $('#watchState').textContent = live.on ? 'Listening' : 'Stopped';
+      $('#watchBig').textContent = live.log.length ? 'Quiet for now' : 'No mosquito heard';
+      $('#watchMeta').textContent = meta;
+    }
+  }
+  function closeWatch() {
+    alarm.active = false; alarm.night = false; alarm.snoozeUntil = 0;
+    clearInterval(alarm.timer); alarm.timer = 0;
+    var w = $('#watch'); if (w) w.hidden = true;
+  }
+  if ($('#watch')) {
+    $('#watchDismiss').addEventListener('click', function () {
+      alarm.active = false;
+      alarm.snoozeUntil = Date.now() + 20000;
+      if (alarm.night && live.on) showWatch(); else { var w = $('#watch'); w.hidden = true; }
+    });
+    $('#watchExit').addEventListener('click', function () { alarm.night = false; if (!alarm.active) $('#watch').hidden = true; });
+    $('#night').addEventListener('click', function () { if (!live.on) return; alarm.night = true; showWatch(); });
+    var ao = $('#alarmOn');
+    ao.checked = alarm.on;
+    ao.addEventListener('change', function () { alarm.on = ao.checked; try { localStorage.setItem('wingbeat-alarm', ao.checked ? 'on' : 'off'); } catch (e) {} });
+    $('#testAlarm').addEventListener('click', function () {
+      if (live.on) beep(live.ctx);
+      else { try { beep(ensureCtx()); } catch (e) {} }
+      try { if (navigator.vibrate) navigator.vibrate([200, 120, 200]); } catch (e) {}
+    });
   }
 
   if ($('#live')) {
@@ -1628,6 +1764,8 @@ figcaption { font-size: 13.5px; color: var(--muted); max-width: 64ch; }
       try { localStorage.setItem('wingbeat-sens', r.value); } catch (e) {}
       state.showAll = false;
       if (live.on) return;
+      var P = WB.SENS[state.sens];
+      if (state.A && state.src && (state.A.smooth !== P.smooth || (state.A.cmin || 6) !== P.cmin)) { analyzeSource(state.src); return; }
       redetect();
       if (!state.A) drawScreen();
     });
